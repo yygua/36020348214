@@ -1,0 +1,586 @@
+// version:smkt_20230925
+var app = new Vue({
+    el: '#app',
+    data() {
+        return {
+            config: {
+                // 配置
+                baseUrl: 'https://bdcdj.jiujiang.gov.cn/smkt',
+                // baseUrl: 'http://ycbdcjydj.yichang.gov.cn:6080/nres', // 接口地址
+                // baseUrl: 'http://weibdc.shantou.gov.cn:8086/api/nres',
+                // baseUrl: 'https://bdcdj.jiujiang.gov.cn/smkt/nres',
+                djtUrl: 'https://bdcdj.jiujiang.gov.cn:16888/nres/base/tool/sjfxck', // 地籍图的查验接口地址
+                isOnlyWeixin: false, // true:开启只允许微信公众号访问，false:不限制
+            },
+            // 接口地址
+            api: {
+                getTicket: '/ios/frame/getQueryTicket', // 获取ticket
+                getZsftxx: '/nres/certificate/getZSFTXX', // 获取证书信息
+                getZsftxxfj: '/nres/certificate/getZSFTXXFJ', // 获取证书附图信息附件
+                filePrefix: '', // 附件路径前缀
+            },
+            appId: 'A2020030502260653419663', // 获取ticket的入参
+            // url地址栏中的参数
+            code: '',
+            c: '', // 文件编码
+            s: '', // 受理编号
+            r: '',
+            t: '', // 成果输出物查验 t=3; 地籍图的查验 t=2
+            bdcData: {}, // 不动产数据
+            // 不动产状态展示列表对应字段
+            stateList: [
+                {
+                    label: '权利人',
+                    value: 'qlr',
+                },
+                {
+                    label: '证书号',
+                    value: 'zsh',
+                },
+                {
+                    label: '不动产单元号',
+                    value: 'bdcdyh',
+                },
+                {
+                    label: '产权坐落',
+                    value: 'zl',
+                },
+                {
+                    label: '建筑面积',
+                    value: 'mj',
+                },
+                {
+                    label: '房屋状态',
+                    value: 'fwzt',
+                },
+                {
+                    label: '产权状态',
+                    value: 'cqzt',
+                },
+                {
+                    label: '附记',
+                    value: 'fj',
+                },
+            ],
+            imgList: [], // 附图列表
+            // 根据bdclx字段匹配展示的附图列表配置，找不到匹配项则展示房屋的附图列表
+            imgType: {
+                房屋: [
+                    // bdclx
+                    {
+                        name: '分层分户图', // 附图名称
+                        fileName: '分层分户图', // 附图文件名
+                        ico: './images/img.png', // 附图图标
+                        p: 1, // 点击查询附图种类的字段，与后端约定
+                        moreImgList: [], // 附图列表
+                    },
+                    {
+                        name: '宗地图',
+                        fileName: '宗地图',
+                        ico: './images/img.png',
+                        p: 2,
+                        moreImgList: [],
+                    },
+                ],
+                多幢房屋: [
+                    {
+                        name: '分层分户图',
+                        fileName: '分层分户图',
+                        ico: './images/img.png',
+                        p: 1,
+                        moreImgList: [],
+                    },
+                    {
+                        name: '宗地图',
+                        fileName: '宗地图',
+                        ico: './images/img.png',
+                        p: 2,
+                        moreImgList: [],
+                    },
+                ],
+                林地: [
+                    {
+                        name: '林地宗地图',
+                        fileName: '林地宗地图',
+                        ico: './images/img.png',
+                        p: '林地宗地图',
+                        moreImgList: [],
+                    },
+                ],
+                林地经营权: [
+                    {
+                        name: '林地经营权示意图',
+                        fileName: '林地经营权示意图',
+                        ico: './images/img.png',
+                        p: '林地经营权示意图',
+                        moreImgList: [],
+                    },
+                ],
+
+                宗海: [
+                    {
+                        name: '宗海图',
+                        fileName: '宗海图',
+                        ico: './images/img.png',
+                        p: '宗海图',
+                        moreImgList: [],
+                    },
+                ],
+                耕地: [
+                    {
+                        name: '耕地经营权示意图',
+                        fileName: '耕地经营权示意图',
+                        ico: './images/img.png',
+                        p: '耕地经营权示意图',
+                        moreImgList: [],
+                    },
+                    {
+                        name: '承包地块示意图',
+                        fileName: '承包地块示意图',
+                        ico: './images/img.png',
+                        p: '承包地块示意图',
+                        moreImgList: [],
+                    },
+                ],
+            },
+            viewShow: false, // 附件是否展示
+            imgSrcList: [], // 附件列表
+            isWeixin: undefined, // 微信内置浏览器
+            isAndroid: undefined, // 安卓设备
+            isIOS: undefined, // IOS设备
+            loading: false, // 加载中
+            scrollTop: '', // 图片展示时滚动的距离
+            moreImgShow: false, // 是否展示多个图片列表 true:展示，false:不展示
+            isShowPage: true, // 是否展示页面
+            isShowViewCloseBtn: true, // 是否展示附件关闭按钮
+            isShowIframe: false, // 是否展示iframe
+            isShowPdfCloseBtn: false, // 是否展示pdf关闭按钮
+        };
+    },
+    computed: {},
+    watch: {
+        loading: {
+            handler(val) {
+                if (val) {
+                    document.documentElement.style.overflow = 'hidden';
+                } else {
+                    document.documentElement.style.overflow = 'scroll';
+                }
+            },
+            immediate: true,
+        },
+        viewShow: {
+            handler(val) {
+                if (val) {
+                    // 记录当前滚动位置
+                    this.scrollPosition = window.scrollY;
+                    // 将页面滚动到最顶部
+                    window.scrollTo(0, 0);
+                    // 设置页面不可滑动
+                    document.documentElement.style.overflow = 'hidden';
+                } else {
+                    // 恢复页面可滑动
+                    document.documentElement.style.overflow = 'scroll';
+                    // 回到之前的位置
+                    window.scrollTo(0, this.scrollPosition);
+                }
+            },
+            immediate: true,
+        },
+    },
+    async mounted() {
+        // 获取ticket
+        await this.getTicket();
+        // 获取 URL 参数
+        this.code = this.GetQueryString('code') || '';
+        this.c = this.GetQueryString('c') || '';
+        this.s = this.GetQueryString('s') || '';
+        this.r = this.GetQueryString('r') || '';
+        this.t = this.GetQueryString('t') || ''; // 成果输出物查验 t=3; 地籍图的查验 t=2
+        this.b = this.GetQueryString('b') || ''; // b=1 表示是微信公众号访问
+        this.f = this.GetQueryString('f') || this.GetQueryString('fileName') || '证书附图';
+
+        // 如果开启只允许微信公众号访问且 'b' 不等于 1，则不是微信公众号访问，弹出提示并退出函数
+        if (this.config.isOnlyWeixin && this.b !== '1') {
+            this.isShowPage = false; // 不展示页面
+            this.$nextTick(() => {
+                alert('请使用微信公众号《不动产服务大厅》进行扫码看图');
+                return;
+            });
+            return false;
+        }
+
+        // 存在参数t，表示是成果输出物查验或地籍图的查验，不显示页面，直接展示附件
+        if (this.t === '3' || this.t === '2') {
+            this.isShowPage = false; // 不展示页面
+            if (this.t === '3') {
+                this.isShowViewCloseBtn = false; // 不展示附件关闭按钮
+                this.getCYData(); // 获取查验附件数据
+                return;
+            }
+            if (this.t === '2') {
+                // this.isShowIframe = true; // 展示iframe
+                this.getDJTData(); // 获取地籍图附件数据
+                return;
+            }
+            return;
+        }
+
+        // 获取当前浏览器环境
+        await this.getEnv();
+
+        // 获取不动产数据
+        await this.getData();
+    },
+
+    methods: {
+        // 获取tecket
+        async getTicket() {
+            const currentTime = Date.now();
+            const encryptedData = JSON.stringify({ appId: this.appId });
+            const url = this.config.baseUrl + this.api.getTicket;
+            const params = {
+                t: currentTime,
+                // m: 1,
+            };
+            const data = {
+                reqData: encryptedData,
+            };
+            const config = {
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                params,
+                data,
+            };
+
+            await axios
+                .post(url, {}, config)
+                .then((res) => {
+                    const { code, msg, resData } = res.data;
+                    if (code === 0) {
+                        const ticket = resData.ticket;
+                        this.ticket = ticket;
+                        return ticket;
+                    } else {
+                        alert(msg || '获取ticket失败');
+                    }
+                })
+                .catch((err) => {
+                    console.log('err :>> ', err);
+                });
+        },
+        // 获url地址栏参数
+        GetQueryString(name) {
+            var reg = new RegExp('(^|&)' + name + '=([^&]*)(&|$)');
+            var r = window.location.search.substr(1).match(reg);
+            if (r != null) return unescape(r[2]);
+            return null;
+        },
+        // 获取证书附图信息
+        async getData() {
+            var vm = this;
+            vm.loading = true;
+            const { code, c, s, r, b } = vm;
+            const params = {};
+            if (code) params.code = code;
+            if (c) params.c = c;
+            if (s) params.s = s;
+            if (r) params.r = r;
+            params.ticket = this.ticket;
+            // 如果只允许微信公众号访问，且b存在值，则传递参数'b=1'，否则不传递'b'参数
+            if (vm.config.isOnlyWeixin && b) params.b = b;
+            await axios
+                // .get(vm.config.baseUrl + '/nres/certificate/getZSFTXX', {
+                .get(vm.config.baseUrl + this.api.getZsftxx, {
+                    params,
+                })
+                .then((res) => {
+                    const { code, resData, msg } = res.data;
+                    vm.loading = false;
+                    if (code === 0) {
+                        vm.bdcData = resData;
+                        // 如果imgType存在对应的不动产类型，则使用对应的附图列表，否则使用房屋的附图列表
+                        vm.imgList = vm.imgType[resData.bdclx] || vm.imgType['房屋'];
+
+                        // 如果存在不动产类型，则过滤不动产类型对应的附图列表
+                        if (resData.djzl) vm.imgList = vm.imgList.filter((item) => item.name.includes(resData.djzl));
+
+                        // if (vm.imgList[2]) vm.imgList[2].fileName = resData.zsh + '--' + '电子证照';
+                    } else {
+                        alert(msg);
+                    }
+                })
+                .catch((err) => {
+                    console.error('getData_err :>> ', err);
+                    vm.loading = false;
+                    // alert(err)
+                });
+        },
+
+        // 获取证书附图信息-附件
+        // c为wjbm p(1:分层分户图，2：宗地图)
+        // c为slbh p(3:电子证)
+        // f(1:url，2：base64)
+        // name 名称
+        getFJData(c, s, p, g, name) {
+            var vm = this;
+            vm.loading = true;
+            const params = {
+                f: 1,
+                t: new Date().getTime(),
+            };
+            if (c) params.c = c; // 文件编码
+            if (s) params.s = s; // 受理编号
+            if (p) params.p = p; // 文件类型(1:分层分户图，2：宗地图，3：电子证,4：宗地图(户))
+            if (g) params.g = g; // 关联编号
+            params.ticket = this.ticket;
+            if (vm.bdcData.nodeName) params.nodeName = vm.bdcData.nodeName; // 数据源节点
+            // if (vm.t) params.t = vm.t; // 成果输出物查验 t=3; 地籍图的查验 t=2
+            axios
+                // .get(vm.config.baseUrl + '/nres/certificate/getZSFTXXFJ', {
+                .get(vm.config.baseUrl + this.api.getZsftxxfj, {
+                    params,
+                })
+                .then((res) => {
+                    const { code, resData, msg } = res.data;
+                    vm.loading = false;
+                    if (code !== 0) {
+                        alert(msg);
+                        return false;
+                    }
+                    vm.imgSrcList = [];
+                    // 接口返回无数据，弹窗提示
+                    if (resData.length === 0) {
+                        alert('暂无' + name + '相关附件信息!');
+                        return false;
+                    }
+                    // 如果resData[0]包含glbh字段，说明是多个附件，需要展示多个附件列表
+                    if (resData[0].glbh) {
+                        if (resData.length === 1) {
+                            this.getFJViewData(resData, name, true);
+                            return true;
+                        }
+                        // 如果有多条数据，說明有多張圖片，打開列表
+                        else if (resData.length > 1) {
+                            this.moreImgShow = true;
+                            vm.imgList.find((item) => item.p === p).moreImgList = resData;
+                        }
+                        return true;
+                    } else {
+                        // 如果resData[0]不包含glbh字段，说明不展示列表，直接展示图片
+                        if (resData.length > 0) {
+                            this.getFJViewData(resData, name, true);
+                            return true;
+                        }
+                    }
+                })
+                .catch((err) => {
+                    console.error('getFJData_err :>> ', err);
+                    // alert(err)
+                });
+        },
+
+        /**
+         * 处理附件数据（包含pdf和图片）
+         * @param {*} resData 附件数据
+         * @param {*} beforeName 附件名字前缀
+         * @param {boolean} isPdfBtn 是否显示关闭pdf页面按钮
+         */
+        getFJViewData(resData, beforeName, isPdfBtn = false) {
+            resData.forEach((item) => {
+                const type = item.content.split('.').pop().toLowerCase(); // 附件类型
+                const url = this.config.baseUrl + '/nres' + item.content + '?ticket=' + this.ticket; // 附件url地址
+                const nl = item.content.split('.')[0].split('/');
+                const afterName = nl[nl.length - 1]; // 获取pdf名字
+                const fileName = beforeName ? beforeName + '--' + afterName : afterName;
+                if (type === 'pdf') {
+                    this.isShowIframe = true;
+                    this.isShowPdfCloseBtn = isPdfBtn;
+                    this.$nextTick(() => {
+                        this.showPDF(url, fileName);
+                    });
+                } else {
+                    // 不是pdf则保存到imgSrcList列表里
+                    this.imgSrcList.push({
+                        type,
+                        url,
+                    });
+                }
+            });
+            // imgSrcList长度不为0说明存在图片，应做展示
+            if (this.imgSrcList.length !== 0) {
+                this.viewShow = true;
+                // 设置当前标题为对应图片种类
+                document.title = beforeName;
+            }
+        },
+
+        // 打开文件
+        openFile({ name, p }) {
+            // 如果图片列表展开状态，关闭图片列表
+            if (this.moreImgShow) {
+                this.moreImgShow = false;
+            } else {
+                // 如果列表关闭状态，请求图片列表
+                this.getFJData(this.bdcData.c, this.bdcData.slbh, p, null, name);
+            }
+        },
+
+        // 點擊更多圖片的列表
+        onMoreClick({ glbh }, { name, p }) {
+            this.getFJData(this.bdcData.c, this.bdcData.slbh, p, glbh, name);
+        },
+
+        // 关闭预览
+        closeView() {
+            this.viewShow = false;
+            document.title = '扫码看图';
+        },
+        /**
+         * 下载pdf
+         * url：pdf的url地址
+         * name：文件名
+         */
+        pdfDownload(url, name) {
+            var oReq = new XMLHttpRequest();
+            oReq.open('GET', url, true);
+            oReq.responseType = 'blob';
+            oReq.onload = function () {
+                var file = new Blob([oReq.response], {
+                    type: 'application/pdf',
+                });
+                saveAs(file, name);
+            };
+            oReq.send();
+        },
+        /**
+         * 判断当前环境
+         */
+        async getEnv() {
+            var ua = navigator.userAgent.toLowerCase();
+            this.isWeixin = ua.indexOf('micromessenger') != -1;
+            var u = navigator.userAgent,
+                app = navigator.appVersion;
+            this.isAndroid = u.indexOf('Android') > -1 || u.indexOf('Linux') > -1; //g
+            this.isIOS = !!u.match(/\(i[^;]+;( U;)? CPU.+Mac OS X/); //ios终端
+        },
+        /**
+         * 获取查验数据
+         */
+        getCYData() {
+            const params = {
+                p: '成果物',
+                s: '1',
+                t: new Date().getTime(),
+            };
+            if (this.c) params.c = this.c;
+            if (this.r) params.r = this.r;
+
+            axios
+                // .get(this.config.baseUrl + '/nres/certificate/getZSFTXXFJ', {
+                .get(vm.config.baseUrl + this.api.getZsftxxfj, {
+                    params,
+                })
+                .then((res) => {
+                    const { code, resData, msg } = res.data;
+                    if (code !== 0) {
+                        alert(msg);
+                        return false;
+                    }
+                    if (resData.length === 0) {
+                        alert('暂无数据');
+                        return false;
+                    }
+                    this.getFJViewData(resData, '成果物', false);
+                })
+                .catch((err) => {
+                    console.error('getCYData_err :>> ', err);
+                    // alert(err)
+                });
+        },
+        /**
+         * 特殊字符转义
+         * @param {String} str 转义字符
+         */
+        filter(str) {
+            str += ''; // 隐式转换
+            str = str.replace(/%/g, '%25');
+            str = str.replace(/\+/g, '%2B');
+            str = str.replace(/ /g, '%20');
+            str = str.replace(/\//g, '%2F');
+            str = str.replace(/\?/g, '%3F');
+            str = str.replace(/&/g, '%26');
+            str = str.replace(/\=/g, '%3D');
+            str = str.replace(/#/g, '%23');
+            return str;
+        },
+        /**
+         * 将对象格式化为URL参数字符串
+         * @param {Object} paramObj 参数对象
+         */
+        formateObjToParamStr(paramObj) {
+            const sdata = [];
+            for (let attr in paramObj) {
+                sdata.push(`${attr}=${this.filter(paramObj[attr])}`);
+            }
+            return sdata.join('&');
+        },
+
+        /**
+         * 获取地籍图数据
+         */
+        getDJTData() {
+            const params = {
+                nodeName: '宜昌',
+                t: new Date().getTime(),
+            };
+            if (this.c) params.c = this.c;
+            if (this.r) params.r = this.r;
+            if (this.f) params.f = this.f + '.pdf';
+
+            const djtFJUrl = this.config.djtUrl + '?' + this.formateObjToParamStr(params);
+            this.scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+            this.isShowIframe = true;
+            this.isShowPdfCloseBtn = false;
+            this.$nextTick(() => {
+                this.showPDF(djtFJUrl, params.f);
+            });
+        },
+        /**
+         * 显示PDF
+         * @param {String} fileUrl 文件的地址
+         * @param {String} fileName 文件名称
+         */
+        showPDF(fileUrl, fileName) {
+            if (!fileUrl) {
+                return;
+            }
+            fileUrl = encodeURIComponent(fileUrl);
+            const htmlUrl = './js/pdfjs-3.9.179-dist/web/viewer.html?file=' + fileUrl;
+            // window.open(htmlUrl, '_top');
+            const docViewerFrameDom = document.getElementById('docViewerFrame');
+            docViewerFrameDom.setAttribute('src', htmlUrl);
+            fileName && (document.title = fileName);
+            // 记录当前滚动位置
+            this.scrollPosition = window.scrollY;
+            // 将页面滚动到最顶部
+            window.scrollTo(0, 0);
+            // 设置页面不可滑动
+            document.documentElement.style.overflow = 'hidden';
+            document.body.scroll = 'no'; // 针对一些特殊情况的处理
+        },
+
+        /**
+         * 关闭pdf预览
+         */
+        closePDFView() {
+            this.isShowIframe = false;
+            document.title = '扫码看图';
+            // 恢复页面可滑动
+            document.documentElement.style.overflow = 'scroll';
+            // 回到之前的位置
+            window.scrollTo(0, this.scrollPosition);
+        },
+    },
+});
